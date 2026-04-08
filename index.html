@@ -1,0 +1,1382 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Go on, Spill something!</title>
+<style>
+
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+html, body {
+  width: 100%;
+  min-height: 100%;
+  background: #FBFFE7;
+  cursor: none;
+  overflow-x: hidden;
+}
+
+#custom-cursor {
+  position: fixed;
+  width: 72px;
+  pointer-events: none;
+  z-index: 99999;
+  transform-origin: 75% 75%;
+  transform: translate(-13px, -10px) rotate(0deg);
+  transition: transform 0.15s ease;
+  will-change: transform;
+}
+
+/* ─────────────────────────────────────────
+   CURTAIN
+───────────────────────────────────────── */
+#curtain-top,
+#curtain-bottom {
+  position: fixed;
+  left: 0;
+  width: 100%;
+  height: 50vh;
+  background: #9C2007;
+  z-index: 1000;
+  overflow: hidden;       /* clips each half of the split text */
+  will-change: transform;
+}
+#curtain-top    { top: 0; }
+#curtain-bottom { bottom: 0; }
+
+/* headline lives inside each panel — overflow:hidden does the splitting */
+.curtain-text {
+  position: absolute;
+  left: 50%;
+  font-family: 'Helvetica Neue', 'Arial Black', Arial, sans-serif;
+  font-weight: 700;
+  font-size: clamp(2rem, 6.667vw, 96px);
+  line-height: 1.22;
+  letter-spacing: -0.1em;
+  text-align: center;
+  color: #FBFFE7;
+  white-space: nowrap;
+  pointer-events: none;
+  will-change: color, opacity;
+}
+/* top panel: text centre sits at panel's bottom edge → shows top half */
+#curtain-top .curtain-text {
+  bottom: 0;
+  transform: translate(-50%, 50%);
+}
+/* bottom panel: text centre sits at panel's top edge → shows bottom half */
+#curtain-bottom .curtain-text {
+  top: 0;
+  transform: translate(-50%, -50%);
+}
+
+/* scroll space — 200vh body height gives 100vh of actual scroll distance */
+#curtain-spacer { height: 200vh; pointer-events: none; }
+
+/* ─────────────────────────────────────────
+   MAIN PAGE  — fixed behind the curtain
+───────────────────────────────────────── */
+#main-wrapper {
+  position: fixed;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  z-index: 1;
+  background: #FBFFE7;
+  overflow: hidden;
+}
+
+#main-page {
+  width: 1440px;
+  height: 900px;
+  position: absolute;
+  top: 50%; left: 50%;
+  transform-origin: center center;
+  /* JS sets: transform: translate(-50%,-50%) scale(X) */
+  overflow: hidden;
+}
+
+/* ─────────────────────────────────────────
+   CANVAS  (the circle)
+───────────────────────────────────────── */
+#fluid-canvas {
+  position: absolute;
+  left: 345px;
+  top: 75px;
+  width: 750px;
+  height: 750px;
+  border-radius: 50%;
+  cursor: none;
+  background: #9C2007;
+  display: block;
+}
+
+/* ─────────────────────────────────────────
+   COFFEE CUP OVERLAY
+   ↓ Put your image file in the same folder
+     as this HTML and update the filename.
+───────────────────────────────────────── */
+#cup-overlay {
+  position: absolute;
+  left: 420px;
+  top: 143px;
+  width: 610px;
+  height: 610px;
+  background-image: url('Brewing up the vibes.png'); /* ← filename must match exactly */
+  background-size: cover;
+  background-position: center;
+  border-radius: 50%;
+  pointer-events: none;
+  transition: opacity 0.6s ease;
+  z-index: 10;
+}
+
+/* ─────────────────────────────────────────
+   CLICK TO POUR
+───────────────────────────────────────── */
+#click-to-pour {
+  position: absolute;
+  left: 345px;
+  top: 75px;
+  width: 750px;
+  height: 750px;
+
+  pointer-events: none;
+  transition: opacity 0.6s ease;
+  animation: spin-prompt 50s linear infinite;
+  transform-origin: center center;
+  z-index: 11;
+}
+
+@keyframes spin-prompt {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+/* ─────────────────────────────────────────
+   BUTTONS
+───────────────────────────────────────── */
+.fluid-btn {
+  position: absolute;
+  font-family: 'Helvetica Neue', 'Arial Black', Arial, sans-serif;
+  font-weight: 700;
+  font-size: 20px;
+  line-height: 22px;
+  letter-spacing: -0.02em;
+  text-transform: uppercase;
+  color: #000000;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 12px 0;
+  transition: opacity 0.2s;
+}
+.fluid-btn:hover    { opacity: 0.4; }
+.fluid-btn:disabled { opacity: 0.2; cursor: default; }
+
+#btn-flush {
+  left: 24px; top: 707px;
+  display: flex;
+  align-items: flex-end;
+}
+#btn-lucky {
+  left: 24px; top: 755px;
+  display: flex;
+  align-items: center;
+}
+#btn-send {
+  right: 24px; top: 49px;
+  left: auto;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  text-align: right;
+}
+#btn-irl {
+  right: 24px; top: 97px;
+  left: auto;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  text-align: right;
+}
+
+
+@keyframes swipe-bounce {
+  0%, 100% { transform: translateX(-50%) translateY(0);    }
+  50%       { transform: translateX(-50%) translateY(-8px); }
+}
+
+@keyframes pitcher-float {
+  0%, 100% { transform: translateX(-50%) translateY(0px);    }
+  50%       { transform: translateX(-50%) translateY(-7px);  }
+}
+@keyframes pitcher-tilt {
+  to { transform: translateX(-50%) rotate(-35deg); }
+}
+
+/* swipe hint — mobile only */
+#swipe-hint { display: none; }
+
+@media (max-width: 768px) {
+  #swipe-hint {
+    display: block;
+    position: fixed;
+    bottom: 52px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 1001;
+    color: #FBFFE7;
+    font-family: 'Helvetica Neue', Arial, sans-serif;
+    font-size: 11px;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    pointer-events: none;
+    animation: swipe-bounce 1.6s ease-in-out infinite;
+  }
+}
+
+/* ── mobile overrides ── */
+.curtain-text-mobile { display: none; }
+
+@media (max-width: 768px) {
+  html, body { cursor: auto; }
+  #custom-cursor { display: none; }
+  #main-page { overflow: visible; }
+
+  /* hide desktop split text */
+  .curtain-text { display: none; }
+
+  /* mobile: each panel gets its own line, centered in the panel */
+  .curtain-text-mobile {
+    display: block;
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    font-family: 'Helvetica Neue', 'Arial Black', Arial, sans-serif;
+    font-weight: 700;
+    font-size: 11vw;
+    letter-spacing: -0.04em;
+    color: #FBFFE7;
+    white-space: nowrap;
+    pointer-events: none;
+    text-align: center;
+  }
+  /* "Go on," sits near the bottom of the top panel */
+  #curtain-top .curtain-text-mobile    { bottom: 10%; }
+  /* "Spill something!" sits near the top of the bottom panel */
+  #curtain-bottom .curtain-text-mobile { top: 4%; }
+}
+</style>
+</head>
+<body>
+
+<img id="custom-cursor" src="cursor-small.png" alt="" />
+
+<!-- ─── CURTAIN ─── -->
+<div id="curtain-top">
+  <span class="curtain-text">Go on, Spill something!</span>
+  <span class="curtain-text-mobile">Go on,</span>
+</div>
+<div id="curtain-bottom">
+  <span class="curtain-text">Go on, Spill something!</span>
+  <span class="curtain-text-mobile">Spill something!</span>
+</div>
+<div id="curtain-spacer"></div>
+<div id="swipe-hint">↑</div>
+
+<!-- ─── MAIN PAGE ─── -->
+<div id="main-wrapper">
+  <div id="main-page">
+
+    <canvas id="fluid-canvas"></canvas>
+
+    <!-- coffee cup image — sits over canvas until first interaction -->
+    <div id="cup-overlay"></div>
+
+    <!-- prompt shown before first pour — text wraps the circle -->
+    <svg id="click-to-pour" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 750 750">
+      <defs>
+        <path id="ctp-ring" d="M 375 45 A 330 330 0 0 1 705 375 A 330 330 0 0 1 375 705 A 330 330 0 0 1 45 375 A 330 330 0 0 1 375 45"/>
+      </defs>
+      <text font-family="'Andale Mono','Courier New',monospace" font-size="21" fill="#FBFFE7">
+        <textPath href="#ctp-ring" xlink:href="#ctp-ring" textLength="2073" lengthAdjust="spacing">
+          click &amp; drag to pour  ·  click &amp; drag to pour  ·  click &amp; drag to pour  ·  click &amp; drag to pour  ·  click &amp; drag to pour  ·  click &amp; drag to pour  ·
+        </textPath>
+      </text>
+    </svg>
+
+    <!-- left buttons -->
+    <button class="fluid-btn" id="btn-flush">[flush]</button>
+    <button class="fluid-btn" id="btn-lucky">[i'm feeling lucky]</button>
+
+    <!-- right buttons -->
+    <button class="fluid-btn" id="btn-send">[share a cup]</button>
+    <button class="fluid-btn" id="btn-irl">[irl]</button>
+
+
+  </div>
+</div>
+
+<script>
+(function () {
+'use strict';
+
+// ─────────────────────────────────────────
+// SCALE LAYOUT TO VIEWPORT
+// ─────────────────────────────────────────
+const isTouch     = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+const mainPage    = document.getElementById('main-page');
+const mainWrapper = document.getElementById('main-wrapper');
+
+function scaleLayout () {
+  const scale = Math.min(window.innerWidth / 1440, window.innerHeight / 900);
+  mainPage.style.transform = 'translate(-50%, -50%) scale(' + scale + ')';
+}
+function mobilizeLayout () {
+  if (!isTouch) return;
+
+  const scale  = Math.min(window.innerWidth / 1440, window.innerHeight / 900);
+  const cx = 720, cy = 450;
+
+  // canvas: 90vw on screen → layout coords
+  const scrSize = window.innerWidth * 0.90;
+  const laySize = scrSize / scale;
+  const layLeft = cx - laySize / 2;
+
+  const cv = document.getElementById('fluid-canvas');
+  cv.style.width  = laySize + 'px';
+  cv.style.height = laySize + 'px';
+  cv.style.left   = layLeft + 'px';
+
+  // cup overlay
+  const ovSz = laySize * 0.813;
+  const ov   = document.getElementById('cup-overlay');
+  ov.style.width  = ovSz + 'px';
+  ov.style.height = ovSz + 'px';
+  ov.style.left   = (cx - ovSz / 2) + 'px';
+
+  // spinning text ring
+  const tr = document.getElementById('click-to-pour');
+  tr.style.width  = laySize + 'px';
+  tr.style.height = laySize + 'px';
+  tr.style.left   = layLeft + 'px';
+
+  // push canvas down so pitcher has breathing room above
+  const vShift = 0;
+  const screenCenterY = window.innerHeight / 2 + vShift;
+  const screenTop = screenCenterY - scrSize / 2;
+  const screenBot = screenCenterY + scrSize / 2;
+
+  const mainPageScreenTop = window.innerHeight / 2 - 900 * scale / 2;
+  const shiftedLayTop = (screenTop - mainPageScreenTop) / scale;
+  const shiftedCy     = shiftedLayTop + laySize / 2;
+
+  cv.style.top = shiftedLayTop + 'px';
+  ov.style.top = (shiftedCy - ovSz / 2) + 'px';
+  tr.style.top = shiftedLayTop + 'px';
+
+  // buttons: move to document.body so position:fixed works
+  const flush = document.getElementById('btn-flush');
+  const lucky = document.getElementById('btn-lucky');
+  const send  = document.getElementById('btn-send');
+  const irl   = document.getElementById('btn-irl');
+
+  [flush, lucky, send, irl].forEach(function (b) {
+    if (b.parentNode !== document.body) document.body.appendChild(b);
+    b.style.position  = 'fixed';
+    b.style.fontSize  = '13px';
+    b.style.zIndex    = '10';
+    b.style.transform = '';
+  });
+
+  // IRL: vertical stacked letters, top-left (no brackets)
+  irl.textContent         = 'irl';
+  irl.style.left          = '20px';
+  irl.style.right         = 'auto';
+  irl.style.top           = '48px';
+  irl.style.writingMode   = 'vertical-rl';
+  irl.style.textOrientation = 'upright';
+  irl.style.letterSpacing = '4px';
+  irl.style.lineHeight    = '1';
+
+  // SHARE: top-right
+  send.textContent     = '[share]';
+  send.style.right     = '20px';
+  send.style.left      = 'auto';
+  send.style.top       = '48px';
+  send.style.textAlign = 'right';
+
+  // FLUSH: centered below canvas
+  flush.style.left      = '50%';
+  flush.style.right     = 'auto';
+  flush.style.top       = Math.round(screenBot + 33) + 'px';
+  flush.style.transform = 'translateX(-50%)';
+
+  // I'M FEELING LUCKY: centered below flush
+  lucky.style.left      = '50%';
+  lucky.style.right     = 'auto';
+  lucky.style.top       = Math.round(screenBot + 73) + 'px';
+  lucky.style.transform = 'translateX(-50%)';
+
+  // pitcher above canvas
+  let pitcher = document.getElementById('mobile-pitcher');
+  if (!pitcher) {
+    pitcher = document.createElement('img');
+    pitcher.id  = 'mobile-pitcher';
+    pitcher.src = 'cursor-small.png';
+    pitcher.style.cssText = 'position:fixed; pointer-events:none; z-index:10; width:auto;';
+    document.body.appendChild(pitcher);
+  }
+  const pitcherH = Math.round(scrSize * 0.18);
+  pitcher.style.height     = pitcherH + 'px';
+  pitcher.style.left       = '50%';
+  pitcher.style.top        = Math.round(screenTop - pitcherH - 20) + 'px';
+  pitcher.style.transform  = 'translateX(-50%)';
+  pitcher.style.transition = 'transform 0.18s ease';
+  pitcher.style.animation  = 'pitcher-float 2.2s ease-in-out infinite';
+}
+
+scaleLayout();
+mobilizeLayout();
+window.addEventListener('resize', function () { scaleLayout(); mobilizeLayout(); });
+
+// ─────────────────────────────────────────
+// CURTAIN SCROLL EFFECT
+// ─────────────────────────────────────────
+const curtainTop   = document.getElementById('curtain-top');
+const curtainBot   = document.getElementById('curtain-bottom');
+const curtainTexts = document.querySelectorAll('.curtain-text, .curtain-text-mobile');
+let curtainDone    = false;
+
+function updateCurtain () {
+  const progress    = Math.min(window.scrollY / window.innerHeight, 1);
+
+  // slide panels apart
+  curtainTop.style.transform = 'translateY(-' + (progress * 100) + '%)';
+  curtainBot.style.transform = 'translateY('  + (progress * 100) + '%)';
+
+  // text colour: #FBFFE7 → #000000 as background behind is revealed
+  const colorP = Math.min(Math.max((progress - 0.1) / 0.5, 0), 1);
+  const r = Math.round(251 * (1 - colorP));
+  const g = Math.round(255 * (1 - colorP));
+  const b = Math.round(231 * (1 - colorP));
+  const col = 'rgb(' + r + ',' + g + ',' + b + ')';
+
+  // text fades out in final 30% of scroll
+  const fadeP = Math.min(Math.max((progress - 0.7) / 0.3, 0), 1);
+
+  curtainTexts.forEach(function (el) {
+    el.style.color   = col;
+    el.style.opacity = 1 - fadeP;
+  });
+
+  // fade swipe hint as user starts scrolling
+  const hint = document.getElementById('swipe-hint');
+  if (hint) hint.style.opacity = Math.max(0, 1 - progress * 6);
+
+  // once fully open: lock scroll so page stays put
+  if (progress >= 1 && !curtainDone) {
+    curtainDone = true;
+    curtainTop.style.pointerEvents = 'none';
+    curtainBot.style.pointerEvents = 'none';
+    document.body.style.overflow   = 'hidden';
+  }
+}
+
+window.addEventListener('scroll', updateCurtain, { passive: true });
+updateCurtain();
+
+// ─────────────────────────────────────────
+// COFFEE CUP OVERLAY — vanish on first pour
+// ─────────────────────────────────────────
+const cupOverlay  = document.getElementById('cup-overlay');
+const pourPrompt  = document.getElementById('click-to-pour');
+let pourStarted    = false;
+let pourStartTime  = null;
+let activePourMs   = 0;     // total ms spent actively dragging
+let dragStartTime  = null;  // timestamp of current drag start
+
+function revealCanvas () {
+  if (pourStarted) return;
+  pourStarted = true;
+  pourStartTime = Date.now();
+  pourPrompt.style.animation = 'none';
+  cupOverlay.style.opacity  = '0';
+  pourPrompt.style.opacity  = '0';
+  setTimeout(function () {
+    cupOverlay.style.display  = 'none';
+    pourPrompt.style.display  = 'none';
+  }, 650);
+}
+
+function resetOverlay () {
+  pourStarted = false;
+  cupOverlay.style.display  = '';
+  cupOverlay.style.opacity  = '1';
+  pourPrompt.style.display  = '';
+  pourPrompt.style.opacity  = '1';
+}
+
+// ─────────────────────────────────────────
+// FLUID SIMULATION
+// ─────────────────────────────────────────
+const canvas = document.getElementById('fluid-canvas');
+resizeCanvas();
+
+let config = {
+  SIM_RESOLUTION:       128,
+  DYE_RESOLUTION:       1024,
+  DENSITY_DISSIPATION:  0.0,
+  VELOCITY_DISSIPATION: 5.0,
+  PRESSURE:             0.9,
+  PRESSURE_ITERATIONS:  100,
+  CURL:                 0.00,
+  SPLAT_RADIUS:         0.3,
+  SPLAT_FORCE:          5000,
+  SHADING:              false,
+  PAUSED:               false,
+  BACK_COLOR:           { r: 156, g: 32, b: 7 },
+};
+
+const MILK_COLOR = { r: 0.922, g: 0.322, b: 0.416 };
+
+function pointerPrototype () {
+  this.id            = -1;
+  this.texcoordX     = 0;
+  this.texcoordY     = 0;
+  this.prevTexcoordX = 0;
+  this.prevTexcoordY = 0;
+  this.deltaX        = 0;
+  this.deltaY        = 0;
+  this.down          = false;
+  this.moved         = false;
+  this.color         = Object.assign({}, MILK_COLOR);
+  this.currentRadius = config.SPLAT_RADIUS;
+}
+
+let pointers = [];
+pointers.push(new pointerPrototype());
+
+const { gl, ext } = getWebGLContext(canvas);
+// DYE_RESOLUTION stays at 1024 on all devices
+
+function getWebGLContext (canvas) {
+  const params = { alpha: true, depth: false, stencil: false, antialias: false, preserveDrawingBuffer: true };
+  let gl = canvas.getContext('webgl2', params);
+  const isWebGL2 = !!gl;
+  if (!isWebGL2) gl = canvas.getContext('webgl', params) || canvas.getContext('experimental-webgl', params);
+  let halfFloat, supportLinearFiltering;
+  if (isWebGL2) {
+    gl.getExtension('EXT_color_buffer_float');
+    supportLinearFiltering = gl.getExtension('OES_texture_float_linear');
+  } else {
+    halfFloat = gl.getExtension('OES_texture_half_float');
+    supportLinearFiltering = gl.getExtension('OES_texture_half_float_linear');
+  }
+  gl.clearColor(0, 0, 0, 1);
+  const halfFloatTexType = isWebGL2 ? gl.HALF_FLOAT : halfFloat.HALF_FLOAT_OES;
+  let formatRGBA = getSupportedFormat(gl, isWebGL2 ? gl.RGBA16F : gl.RGBA, gl.RGBA, halfFloatTexType, supportLinearFiltering);
+  let formatRG   = getSupportedFormat(gl, isWebGL2 ? gl.RG16F : gl.RGBA, isWebGL2 ? gl.RG : gl.RGBA, halfFloatTexType, supportLinearFiltering);
+  let formatR    = getSupportedFormat(gl, isWebGL2 ? gl.R16F : gl.RGBA, isWebGL2 ? gl.RED : gl.RGBA, halfFloatTexType, supportLinearFiltering);
+  return { gl, ext: { formatRGBA, formatRG, formatR, halfFloatTexType, supportLinearFiltering } };
+}
+
+function getSupportedFormat (gl, internalFormat, format, type) {
+  if (!supportRenderTextureFormat(gl, internalFormat, format, type)) {
+    switch (internalFormat) {
+      case gl.R16F:  return getSupportedFormat(gl, gl.RG16F,   gl.RG,   type);
+      case gl.RG16F: return getSupportedFormat(gl, gl.RGBA16F, gl.RGBA, type);
+      default:       return null;
+    }
+  }
+  return { internalFormat, format };
+}
+
+function supportRenderTextureFormat (gl, internalFormat, format, type) {
+  let texture = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, texture);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+  gl.texImage2D(gl.TEXTURE_2D, 0, internalFormat, 4, 4, 0, format, type, null);
+  let fbo = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
+  return gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE;
+}
+
+function compileShader (type, source, keywords) {
+  source = addKeywords(source, keywords);
+  const shader = gl.createShader(type);
+  gl.shaderSource(shader, source);
+  gl.compileShader(shader);
+  return shader;
+}
+function addKeywords (source, keywords) {
+  if (keywords == null) return source;
+  return keywords.map(k => '#define ' + k + '\n').join('') + source;
+}
+function createProgram (vertexShader, fragmentShader) {
+  let p = gl.createProgram();
+  gl.attachShader(p, vertexShader);
+  gl.attachShader(p, fragmentShader);
+  gl.linkProgram(p);
+  return p;
+}
+function getUniforms (program) {
+  let uniforms = [];
+  let n = gl.getProgramParameter(program, gl.ACTIVE_UNIFORMS);
+  for (let i = 0; i < n; i++) {
+    let name = gl.getActiveUniform(program, i).name;
+    uniforms[name] = gl.getUniformLocation(program, name);
+  }
+  return uniforms;
+}
+
+class Material {
+  constructor (vertexShader, fragmentShaderSource) {
+    this.vertexShader = vertexShader;
+    this.fragmentShaderSource = fragmentShaderSource;
+    this.programs = [];
+    this.activeProgram = null;
+    this.uniforms = [];
+  }
+  setKeywords (keywords) {
+    let hash = 0;
+    for (let i = 0; i < keywords.length; i++) hash += (keywords[i].length * i);
+    let program = this.programs[hash];
+    if (program == null) {
+      program = createProgram(this.vertexShader, compileShader(gl.FRAGMENT_SHADER, this.fragmentShaderSource, keywords));
+      this.programs[hash] = program;
+    }
+    this.uniforms = getUniforms(program);
+    this.activeProgram = program;
+  }
+  bind () { gl.useProgram(this.activeProgram); }
+}
+
+class Program {
+  constructor (vertexShader, fragmentShader) {
+    this.program  = createProgram(vertexShader, fragmentShader);
+    this.uniforms = getUniforms(this.program);
+  }
+  bind () { gl.useProgram(this.program); }
+}
+
+const baseVertexShader = compileShader(gl.VERTEX_SHADER, `
+  precision highp float;
+  attribute vec2 aPosition;
+  varying vec2 vUv; varying vec2 vL; varying vec2 vR; varying vec2 vT; varying vec2 vB;
+  uniform vec2 texelSize;
+  void main () {
+    vUv = aPosition * 0.5 + 0.5;
+    vL = vUv - vec2(texelSize.x, 0.0);
+    vR = vUv + vec2(texelSize.x, 0.0);
+    vT = vUv + vec2(0.0, texelSize.y);
+    vB = vUv - vec2(0.0, texelSize.y);
+    gl_Position = vec4(aPosition, 0.0, 1.0);
+  }
+`);
+const copyShader = compileShader(gl.FRAGMENT_SHADER, `
+  precision mediump float; precision mediump sampler2D;
+  varying highp vec2 vUv; uniform sampler2D uTexture;
+  void main () { gl_FragColor = texture2D(uTexture, vUv); }
+`);
+const clearShader = compileShader(gl.FRAGMENT_SHADER, `
+  precision mediump float; precision mediump sampler2D;
+  varying highp vec2 vUv; uniform sampler2D uTexture; uniform float value;
+  void main () { gl_FragColor = value * texture2D(uTexture, vUv); }
+`);
+const colorShader = compileShader(gl.FRAGMENT_SHADER, `
+  precision mediump float; uniform vec4 color;
+  void main () { gl_FragColor = color; }
+`);
+const displayShaderSource = `
+  precision highp float; precision highp sampler2D;
+  varying vec2 vUv; varying vec2 vL; varying vec2 vR; varying vec2 vT; varying vec2 vB;
+  uniform sampler2D uTexture; uniform vec2 texelSize; uniform vec3 uBackColor;
+  void main () {
+    vec3 c = texture2D(uTexture, vUv).rgb;
+    float t = clamp(max(c.r, max(c.g, c.b)) / 0.922, 0.0, 1.0);
+    vec3 paintColor = vec3(0.922, 0.322, 0.416);
+    gl_FragColor = vec4(mix(uBackColor, paintColor, t), 1.0);
+  }
+`;
+const splatShader = compileShader(gl.FRAGMENT_SHADER, `
+  precision highp float; precision highp sampler2D;
+  varying vec2 vUv;
+  uniform sampler2D uTarget; uniform float aspectRatio;
+  uniform vec3 color; uniform vec2 point; uniform float radius;
+  void main () {
+    vec2 p = vUv - point.xy;
+    p.x *= aspectRatio;
+    vec3 splat = exp(-dot(p, p) / radius) * color;
+    vec3 base  = texture2D(uTarget, vUv).xyz;
+    gl_FragColor = vec4(base + splat, 1.0);
+  }
+`);
+const advectionShader = compileShader(gl.FRAGMENT_SHADER, `
+  precision highp float; precision highp sampler2D;
+  varying vec2 vUv;
+  uniform sampler2D uVelocity; uniform sampler2D uSource;
+  uniform vec2 texelSize; uniform float dt; uniform float dissipation;
+  void main () {
+    vec2 coord = vUv - dt * texture2D(uVelocity, vUv).xy * texelSize;
+    gl_FragColor = texture2D(uSource, coord) / (1.0 + dissipation * dt);
+  }
+`);
+const divergenceShader = compileShader(gl.FRAGMENT_SHADER, `
+  precision mediump float; precision mediump sampler2D;
+  varying highp vec2 vUv; varying highp vec2 vL; varying highp vec2 vR;
+  varying highp vec2 vT; varying highp vec2 vB;
+  uniform sampler2D uVelocity;
+  void main () {
+    float L = texture2D(uVelocity, vL).x; float R = texture2D(uVelocity, vR).x;
+    float T = texture2D(uVelocity, vT).y; float B = texture2D(uVelocity, vB).y;
+    gl_FragColor = vec4(0.5 * (R - L + T - B), 0.0, 0.0, 1.0);
+  }
+`);
+const curlShader = compileShader(gl.FRAGMENT_SHADER, `
+  precision mediump float; precision mediump sampler2D;
+  varying highp vec2 vUv; varying highp vec2 vL; varying highp vec2 vR;
+  varying highp vec2 vT; varying highp vec2 vB;
+  uniform sampler2D uVelocity;
+  void main () {
+    float L = texture2D(uVelocity, vL).y; float R = texture2D(uVelocity, vR).y;
+    float T = texture2D(uVelocity, vT).x; float B = texture2D(uVelocity, vB).x;
+    gl_FragColor = vec4(0.5 * (R - L - T + B), 0.0, 0.0, 1.0);
+  }
+`);
+const vorticityShader = compileShader(gl.FRAGMENT_SHADER, `
+  precision highp float; precision highp sampler2D;
+  varying vec2 vUv; varying vec2 vL; varying vec2 vR; varying vec2 vT; varying vec2 vB;
+  uniform sampler2D uVelocity; uniform sampler2D uCurl;
+  uniform float curl; uniform float dt;
+  void main () {
+    float L = texture2D(uCurl, vL).x; float R = texture2D(uCurl, vR).x;
+    float T = texture2D(uCurl, vT).x; float B = texture2D(uCurl, vB).x;
+    float C = texture2D(uCurl, vUv).x;
+    vec2 force = 0.5 * vec2(abs(T) - abs(B), abs(R) - abs(L));
+    force /= length(force) + 0.0001;
+    force *= curl * C;
+    force.y *= -1.0;
+    gl_FragColor = vec4(texture2D(uVelocity, vUv).xy + force * dt, 0.0, 1.0);
+  }
+`);
+const pressureShader = compileShader(gl.FRAGMENT_SHADER, `
+  precision mediump float; precision mediump sampler2D;
+  varying highp vec2 vUv; varying highp vec2 vL; varying highp vec2 vR;
+  varying highp vec2 vT; varying highp vec2 vB;
+  uniform sampler2D uPressure; uniform sampler2D uDivergence;
+  void main () {
+    float L = texture2D(uPressure, vL).x; float R = texture2D(uPressure, vR).x;
+    float T = texture2D(uPressure, vT).x; float B = texture2D(uPressure, vB).x;
+    float divergence = texture2D(uDivergence, vUv).x;
+    gl_FragColor = vec4((L + R + B + T - divergence) * 0.25, 0.0, 0.0, 1.0);
+  }
+`);
+const gradSubtractShader = compileShader(gl.FRAGMENT_SHADER, `
+  precision mediump float; precision mediump sampler2D;
+  varying highp vec2 vUv; varying highp vec2 vL; varying highp vec2 vR;
+  varying highp vec2 vT; varying highp vec2 vB;
+  uniform sampler2D uPressure; uniform sampler2D uVelocity;
+  void main () {
+    float L = texture2D(uPressure, vL).x; float R = texture2D(uPressure, vR).x;
+    float T = texture2D(uPressure, vT).x; float B = texture2D(uPressure, vB).x;
+    vec2 velocity = texture2D(uVelocity, vUv).xy - vec2(R - L, T - B);
+    gl_FragColor = vec4(velocity, 0.0, 1.0);
+  }
+`);
+
+const blit = (() => {
+  gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1,-1,1,1,1,1,-1]), gl.STATIC_DRAW);
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, gl.createBuffer());
+  gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array([0,1,2,0,2,3]), gl.STATIC_DRAW);
+  gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+  gl.enableVertexAttribArray(0);
+  return function (target) {
+    if (target == null) {
+      gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    } else {
+      gl.viewport(0, 0, target.width, target.height);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, target.fbo);
+    }
+    gl.drawElements(gl.TRIANGLES, 6, gl.UNSIGNED_SHORT, 0);
+  };
+})();
+
+let dye, velocity, divergence, curlFBO, pressure;
+const copyProgram         = new Program(baseVertexShader, copyShader);
+const clearProgram        = new Program(baseVertexShader, clearShader);
+const colorProgram        = new Program(baseVertexShader, colorShader);
+const splatProgram        = new Program(baseVertexShader, splatShader);
+const advectionProgram    = new Program(baseVertexShader, advectionShader);
+const divergenceProgram   = new Program(baseVertexShader, divergenceShader);
+const curlProgram         = new Program(baseVertexShader, curlShader);
+const vorticityProgram    = new Program(baseVertexShader, vorticityShader);
+const pressureProgram     = new Program(baseVertexShader, pressureShader);
+const gradSubtractProgram = new Program(baseVertexShader, gradSubtractShader);
+const displayMaterial     = new Material(baseVertexShader, displayShaderSource);
+
+function initFramebuffers () {
+  let simRes = getResolution(config.SIM_RESOLUTION);
+  let dyeRes = getResolution(config.DYE_RESOLUTION);
+  const texType   = ext.halfFloatTexType;
+  const rgba      = ext.formatRGBA;
+  const rg        = ext.formatRG;
+  const r         = ext.formatR;
+  const filtering = ext.supportLinearFiltering ? gl.LINEAR : gl.NEAREST;
+  dye        = createDoubleFBO(dyeRes.width, dyeRes.height, rgba.internalFormat, rgba.format, texType, filtering);
+  velocity   = createDoubleFBO(simRes.width, simRes.height, rg.internalFormat, rg.format, texType, filtering);
+  divergence = createFBO(simRes.width, simRes.height, r.internalFormat, r.format, texType, gl.NEAREST);
+  curlFBO    = createFBO(simRes.width, simRes.height, r.internalFormat, r.format, texType, gl.NEAREST);
+  pressure   = createDoubleFBO(simRes.width, simRes.height, r.internalFormat, r.format, texType, gl.NEAREST);
+}
+
+function createFBO (w, h, internalFormat, format, type, param) {
+  gl.activeTexture(gl.TEXTURE0);
+  let texture = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, texture);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, param);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, param);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.texImage2D(gl.TEXTURE_2D, 0, internalFormat, w, h, 0, format, type, null);
+  let fbo = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
+  return {
+    texture, fbo, width: w, height: h,
+    texelSizeX: 1.0/w, texelSizeY: 1.0/h,
+    attach(id) { gl.activeTexture(gl.TEXTURE0 + id); gl.bindTexture(gl.TEXTURE_2D, texture); return id; }
+  };
+}
+
+function createDoubleFBO (w, h, internalFormat, format, type, param) {
+  let fbo1 = createFBO(w, h, internalFormat, format, type, param);
+  let fbo2 = createFBO(w, h, internalFormat, format, type, param);
+  return {
+    width: w, height: h,
+    texelSizeX: fbo1.texelSizeX, texelSizeY: fbo1.texelSizeY,
+    get read  () { return fbo1; },
+    get write () { return fbo2; },
+    swap () { let t = fbo1; fbo1 = fbo2; fbo2 = t; }
+  };
+}
+
+displayMaterial.setKeywords([]);
+initFramebuffers();
+
+let lastUpdateTime = Date.now();
+update();
+
+function update () {
+  const dt = Math.min((Date.now() - lastUpdateTime) / 1000, 0.016);
+  lastUpdateTime = Date.now();
+  if (resizeCanvas()) initFramebuffers();
+  applyInputs();
+  step(dt);
+  render(null);
+  requestAnimationFrame(update);
+}
+
+function applyInputs () {
+  pointers.forEach(function (p) {
+    if (p.down) { splatPointer(p); p.moved = false; }
+  });
+}
+
+function step (dt) {
+  gl.disable(gl.BLEND);
+
+  curlProgram.bind();
+  gl.uniform2f(curlProgram.uniforms.texelSize, velocity.texelSizeX, velocity.texelSizeY);
+  gl.uniform1i(curlProgram.uniforms.uVelocity, velocity.read.attach(0));
+  blit(curlFBO);
+
+  vorticityProgram.bind();
+  gl.uniform2f(vorticityProgram.uniforms.texelSize, velocity.texelSizeX, velocity.texelSizeY);
+  gl.uniform1i(vorticityProgram.uniforms.uVelocity, velocity.read.attach(0));
+  gl.uniform1i(vorticityProgram.uniforms.uCurl,     curlFBO.attach(1));
+  gl.uniform1f(vorticityProgram.uniforms.curl, config.CURL);
+  gl.uniform1f(vorticityProgram.uniforms.dt,   dt);
+  blit(velocity.write); velocity.swap();
+
+  divergenceProgram.bind();
+  gl.uniform2f(divergenceProgram.uniforms.texelSize, velocity.texelSizeX, velocity.texelSizeY);
+  gl.uniform1i(divergenceProgram.uniforms.uVelocity, velocity.read.attach(0));
+  blit(divergence);
+
+  clearProgram.bind();
+  gl.uniform1i(clearProgram.uniforms.uTexture, pressure.read.attach(0));
+  gl.uniform1f(clearProgram.uniforms.value, config.PRESSURE);
+  blit(pressure.write); pressure.swap();
+
+  pressureProgram.bind();
+  gl.uniform2f(pressureProgram.uniforms.texelSize, velocity.texelSizeX, velocity.texelSizeY);
+  gl.uniform1i(pressureProgram.uniforms.uDivergence, divergence.attach(0));
+  for (let i = 0; i < config.PRESSURE_ITERATIONS; i++) {
+    gl.uniform1i(pressureProgram.uniforms.uPressure, pressure.read.attach(1));
+    blit(pressure.write); pressure.swap();
+  }
+
+  gradSubtractProgram.bind();
+  gl.uniform2f(gradSubtractProgram.uniforms.texelSize, velocity.texelSizeX, velocity.texelSizeY);
+  gl.uniform1i(gradSubtractProgram.uniforms.uPressure, pressure.read.attach(0));
+  gl.uniform1i(gradSubtractProgram.uniforms.uVelocity, velocity.read.attach(1));
+  blit(velocity.write); velocity.swap();
+
+  advectionProgram.bind();
+  gl.uniform2f(advectionProgram.uniforms.texelSize, velocity.texelSizeX, velocity.texelSizeY);
+  gl.uniform1i(advectionProgram.uniforms.uVelocity, velocity.read.attach(0));
+  gl.uniform1i(advectionProgram.uniforms.uSource,   velocity.read.attach(0));
+  gl.uniform1f(advectionProgram.uniforms.dt, dt);
+  gl.uniform1f(advectionProgram.uniforms.dissipation, config.VELOCITY_DISSIPATION);
+  blit(velocity.write); velocity.swap();
+
+  gl.uniform1i(advectionProgram.uniforms.uSource, dye.read.attach(1));
+  gl.uniform1f(advectionProgram.uniforms.dissipation, config.DENSITY_DISSIPATION);
+  blit(dye.write); dye.swap();
+}
+
+function render (target) {
+  drawDisplay(target);
+}
+
+function drawDisplay (target) {
+  gl.disable(gl.BLEND);
+  displayMaterial.bind();
+  gl.uniform1i(displayMaterial.uniforms.uTexture, dye.read.attach(0));
+  let bc = normalizeColor(config.BACK_COLOR);
+  gl.uniform3f(displayMaterial.uniforms.uBackColor, bc.r, bc.g, bc.b);
+  blit(target);
+}
+
+function splatPointer (pointer) {
+  let dx = pointer.deltaX * config.SPLAT_FORCE;
+  let dy = pointer.deltaY * config.SPLAT_FORCE;
+  splat(pointer.texcoordX, pointer.texcoordY, dx, dy, pointer.color, pointer.currentRadius);
+}
+
+function splat (x, y, dx, dy, color, radius) {
+  splatProgram.bind();
+  gl.uniform1i(splatProgram.uniforms.uTarget, velocity.read.attach(0));
+  gl.uniform1f(splatProgram.uniforms.aspectRatio, canvas.width / canvas.height);
+  gl.uniform2f(splatProgram.uniforms.point, x, y);
+  gl.uniform3f(splatProgram.uniforms.color, dx, dy, 0.0);
+  gl.uniform1f(splatProgram.uniforms.radius, radius / 100.0);
+  blit(velocity.write); velocity.swap();
+
+  gl.uniform1i(splatProgram.uniforms.uTarget, dye.read.attach(0));
+  gl.uniform3f(splatProgram.uniforms.color, color.r, color.g, color.b);
+  blit(dye.write); dye.swap();
+}
+
+function resizeCanvas () {
+  const rect = canvas.getBoundingClientRect();
+  let w = Math.floor(rect.width  * window.devicePixelRatio);
+  let h = Math.floor(rect.height * window.devicePixelRatio);
+  if (w < 1) w = 1;
+  if (h < 1) h = 1;
+  if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; return true; }
+  return false;
+}
+
+// ─────────────────────────────────────────
+// CUSTOM CURSOR (desktop only)
+// ─────────────────────────────────────────
+const customCursor = document.getElementById('custom-cursor');
+
+if (!isTouch) {
+  document.addEventListener('mousemove', function (e) {
+    customCursor.style.left = e.clientX + 'px';
+    customCursor.style.top  = e.clientY + 'px';
+  });
+  canvas.addEventListener('mousedown', function () {
+    customCursor.style.transform = 'translate(-13px, -10px) rotate(-38deg)';
+  });
+  document.addEventListener('mouseup', function () {
+    customCursor.style.transform = 'translate(-13px, -10px) rotate(0deg)';
+  });
+}
+
+// ─────────────────────────────────────────
+// INPUT HANDLING
+// ─────────────────────────────────────────
+canvas.addEventListener('mousedown', function (e) {
+  revealCanvas();
+  dragStartTime = Date.now();
+  updatePointerDownData(pointers[0], -1,
+    e.offsetX * window.devicePixelRatio,
+    e.offsetY * window.devicePixelRatio);
+});
+canvas.addEventListener('mousemove', function (e) {
+  if (!pointers[0].down) return;
+  updatePointerMoveData(pointers[0],
+    e.offsetX * window.devicePixelRatio,
+    e.offsetY * window.devicePixelRatio);
+});
+window.addEventListener('mouseup', function () {
+  if (dragStartTime !== null) {
+    activePourMs += Date.now() - dragStartTime;
+    dragStartTime = null;
+  }
+  pointers[0].down = false;
+});
+
+canvas.addEventListener('touchstart', function (e) {
+  if (!curtainDone) return;
+  e.preventDefault();
+  revealCanvas();
+  dragStartTime = Date.now();
+  var mob = document.getElementById('mobile-pitcher');
+  if (mob) { mob.style.animation = 'none'; mob.style.transform = 'translateX(-50%) rotate(-35deg)'; }
+  const t    = e.changedTouches[0];
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = canvas.width  / rect.width;
+  const scaleY = canvas.height / rect.height;
+  updatePointerDownData(pointers[0], t.identifier,
+    (t.clientX - rect.left) * scaleX,
+    (t.clientY - rect.top)  * scaleY);
+}, { passive: false });
+canvas.addEventListener('touchmove', function (e) {
+  e.preventDefault();
+  const t    = e.changedTouches[0];
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = canvas.width  / rect.width;
+  const scaleY = canvas.height / rect.height;
+  updatePointerMoveData(pointers[0],
+    (t.clientX - rect.left) * scaleX,
+    (t.clientY - rect.top)  * scaleY);
+}, { passive: false });
+canvas.addEventListener('touchend', function () {
+  if (dragStartTime !== null) {
+    activePourMs += Date.now() - dragStartTime;
+    dragStartTime = null;
+  }
+  pointers[0].down = false;
+  var mob = document.getElementById('mobile-pitcher');
+  if (mob) {
+    mob.style.transform = 'translateX(-50%)';
+    setTimeout(function () { mob.style.animation = 'pitcher-float 2.2s ease-in-out infinite'; }, 200);
+  }
+});
+
+function updatePointerDownData (pointer, id, posX, posY) {
+  pointer.id   = id;   pointer.down  = true; pointer.moved = false;
+  pointer.texcoordX     = posX / canvas.width;
+  pointer.texcoordY     = 1.0 - posY / canvas.height;
+  pointer.prevTexcoordX = pointer.texcoordX;
+  pointer.prevTexcoordY = pointer.texcoordY;
+  pointer.deltaX = 0;  pointer.deltaY = 0;
+  pointer.currentRadius = config.SPLAT_RADIUS;
+}
+
+function updatePointerMoveData (pointer, posX, posY) {
+  pointer.prevTexcoordX = pointer.texcoordX;
+  pointer.prevTexcoordY = pointer.texcoordY;
+  pointer.texcoordX = posX / canvas.width;
+  pointer.texcoordY = 1.0 - posY / canvas.height;
+  pointer.deltaX    = pointer.texcoordX - pointer.prevTexcoordX;
+  pointer.deltaY    = pointer.texcoordY - pointer.prevTexcoordY;
+  pointer.moved     = true;
+  let vel         = Math.sqrt(pointer.deltaX * pointer.deltaX + pointer.deltaY * pointer.deltaY);
+  let targetRadius = config.SPLAT_RADIUS * (1.0 - Math.min(vel * 50, 0.7));
+  pointer.currentRadius += (targetRadius - pointer.currentRadius) * 0.2;
+}
+
+// ─────────────────────────────────────────
+// BUTTON ACTIONS
+// ─────────────────────────────────────────
+
+// FLUSH
+window.fluidFlush = function () {
+  activePourMs  = 0;
+  dragStartTime = null;
+  const cx = 0.5, cy = 0.5, r = 0.28, n = 16;
+  for (let i = 0; i < n; i++) {
+    const angle = (i / n) * Math.PI * 2;
+    const x  = cx + r * Math.cos(angle);
+    const y  = cy + r * Math.sin(angle);
+    const tx = -Math.sin(angle), ty = Math.cos(angle);
+    const ix = -Math.cos(angle), iy = -Math.sin(angle);
+    const force = 4000;
+    splat(x, y, (tx * 0.6 + ix * 0.4) * force, (ty * 0.6 + iy * 0.4) * force,
+      { r: 0, g: 0, b: 0 }, config.SPLAT_RADIUS * 2);
+  }
+  splat(cx, cy, 0, 0, { r: 0, g: 0, b: 0 }, config.SPLAT_RADIUS * 3);
+  const orig = config.DENSITY_DISSIPATION;
+  config.DENSITY_DISSIPATION = 8;
+  setTimeout(function () {
+    initFramebuffers();
+    config.DENSITY_DISSIPATION = orig;
+  }, 1000);
+};
+
+// I'M FEELING LUCKY — clears canvas first, then draws a pattern
+function imFeelingLucky () {
+  const patterns = [patternHeart, patternStar, patternFlower, patternSmiley, patternGoldenSpiral];
+  const chosen   = patterns[Math.floor(Math.random() * patterns.length)];
+  const orig = config.DENSITY_DISSIPATION;
+  config.DENSITY_DISSIPATION = 6;
+  setTimeout(function () {
+    initFramebuffers();
+    config.DENSITY_DISSIPATION = orig;
+    chosen();
+  }, 400);
+}
+
+// helper: one pattern splat
+function ps (x, y, vx, vy, radiusScale) {
+  splat(x, y, vx, vy, Object.assign({}, MILK_COLOR), config.SPLAT_RADIUS * (radiusScale || 0.35));
+}
+
+// HEART
+function patternHeart () {
+  const steps = 80, ms = 15, sc = 0.022;
+  for (let i = 0; i < steps; i++) {
+    (function(i) { setTimeout(function () {
+      const t  = (i / steps) * Math.PI * 2;
+      const x  = 0.5 + sc * 16 * Math.pow(Math.sin(t), 3);
+      const y  = 0.5 - sc * (13*Math.cos(t) - 5*Math.cos(2*t) - 2*Math.cos(3*t) - Math.cos(4*t));
+      const dx =  sc * 16 * 3 * Math.pow(Math.sin(t), 2) * Math.cos(t);
+      const dy = -sc * (-13*Math.sin(t) + 10*Math.sin(2*t) + 6*Math.sin(3*t) + 4*Math.sin(4*t));
+      const len = Math.sqrt(dx*dx + dy*dy) + 0.001;
+      ps(x, y, dx/len * 2500, dy/len * 2500, 0.35);
+    }, i * ms); })(i);
+  }
+}
+
+// 5-POINTED STAR
+function patternStar () {
+  const outer = 0.36, inner = 0.15, points = 5, steps = 60, ms = 14;
+  for (let i = 0; i < steps; i++) {
+    (function(i) { setTimeout(function () {
+      const total = points * 2;
+      const idx   = (i / steps) * total;
+      const a     = Math.floor(idx);
+      const frac  = idx - a;
+      const ang1  = (a / total) * Math.PI * 2 - Math.PI / 2;
+      const ang2  = ((a + 1) / total) * Math.PI * 2 - Math.PI / 2;
+      const r1    = a % 2 === 0 ? outer : inner;
+      const r2    = a % 2 === 0 ? inner : outer;
+      const x1    = 0.5 + r1 * Math.cos(ang1), y1 = 0.5 + r1 * Math.sin(ang1);
+      const x2    = 0.5 + r2 * Math.cos(ang2), y2 = 0.5 + r2 * Math.sin(ang2);
+      const x     = x1 + (x2 - x1) * frac;
+      const y     = y1 + (y2 - y1) * frac;
+      ps(x, y, (x2 - x1) * 3000, (y2 - y1) * 3000, 0.3);
+    }, i * ms); })(i);
+  }
+}
+
+// 6-PETAL FLOWER: r = cos²(3θ)
+function patternFlower () {
+  const steps = 120, ms = 12;
+  for (let i = 0; i < steps; i++) {
+    (function(i) { setTimeout(function () {
+      const t   = (i / steps) * Math.PI * 2;
+      const c3t = Math.cos(3 * t);
+      const r   = 0.38 * c3t * c3t;
+      const x   = 0.5 + r * Math.cos(t);
+      const y   = 0.5 + r * Math.sin(t);
+      const dr  = -0.38 * 6 * c3t * Math.sin(3 * t);
+      const vx  = dr * Math.cos(t) - r * Math.sin(t);
+      const vy  = dr * Math.sin(t) + r * Math.cos(t);
+      const len = Math.sqrt(vx*vx + vy*vy) + 0.001;
+      ps(x, y, vx/len * 2200, vy/len * 2200, 0.32);
+    }, i * ms); })(i);
+  }
+}
+
+// SMILEY FACE — two dots + smile
+function patternSmiley () {
+  // left eye dot
+  setTimeout(function () { ps(0.38, 0.60, 0, 0, 0.55); }, 0);
+  // right eye dot
+  setTimeout(function () { ps(0.62, 0.60, 0, 0, 0.55); }, 0);
+  // smile arc: centre (0.5, 0.42), r=0.15, bottom arc
+  const sR = 0.15, sA = Math.PI + 0.4, sB = 2*Math.PI - 0.4;
+  for (let i = 0; i < 30; i++) {
+    (function(i) { setTimeout(function () {
+      const t = sA + (i / 29) * (sB - sA);
+      ps(0.5 + sR*Math.cos(t), 0.42 + sR*Math.sin(t),
+         -Math.sin(t)*1800, Math.cos(t)*1800, 0.28);
+    }, 200 + i * 18); })(i);
+  }
+}
+
+// GOLDEN SPIRAL — the wildcard
+function patternGoldenSpiral () {
+  const golden = Math.PI * (3 - Math.sqrt(5));
+  const n = 100, ms = 12;
+  for (let i = 0; i < n; i++) {
+    (function(i) { setTimeout(function () {
+      const r     = Math.sqrt(i / n) * 0.42;
+      const theta = i * golden;
+      const x     = 0.5 + r * Math.cos(theta);
+      const y     = 0.5 + r * Math.sin(theta);
+      ps(x, y, -Math.sin(theta)*1800, Math.cos(theta)*1800, 0.28);
+    }, i * ms); })(i);
+  }
+}
+
+// SHARE A CUP — downloads canvas as PNG
+function sendACup () {
+  const link      = document.createElement('a');
+  link.download   = 'my-latte-art.png';
+  link.href       = canvas.toDataURL('image/png');
+  link.click();
+}
+
+// IRL — opens your Cargo page
+function openIRL () {
+  window.open('YOUR_CARGO_URL_HERE', '_blank'); // ← paste your Cargo URL here
+}
+
+function playFlushSound () {
+  const audio = new Audio('flushsound.mp3');
+  audio.play();
+  setTimeout(function () {
+    audio.pause();
+    audio.currentTime = 0;
+  }, 3500);
+}
+
+// Wire up buttons
+document.getElementById('btn-flush').addEventListener('click', function () {
+  this.disabled = true;
+  playFlushSound();
+  window.fluidFlush();
+  const btn = this;
+  setTimeout(function () { btn.disabled = false; }, 1100);
+});
+document.getElementById('btn-lucky').addEventListener('click', function () {
+  revealCanvas();
+  imFeelingLucky();
+});
+document.getElementById('btn-send').addEventListener('click', sendACup);
+document.getElementById('btn-irl').addEventListener('click', openIRL);
+
+// ─────────────────────────────────────────
+// SHARE A CUP — café receipt download
+// ─────────────────────────────────────────
+function sendACup () {
+  const scale   = 2;          // @2x for sharp retina output
+  const rW      = 500 * scale;
+  const pad     = 48 * scale;
+  const fSize   = 20 * scale;
+  const lH      = 30 * scale;
+  const circleD = 380 * scale;
+  const divY    = 1 * scale;
+
+  const funNotes = [
+    'good control.',
+    'the milk has spoken.',
+    'a masterpiece, honestly.',
+    'questionable technique.',
+    'barista would be proud.',
+    'needs more practice.',
+    'art. undeniable.',
+    'your best work yet.',
+    'we have no notes.',
+    'picasso who?'
+  ];
+  const note    = funNotes[Math.floor(Math.random() * funNotes.length)];
+  const now     = new Date();
+  const timeStr = now.getHours().toString().padStart(2,'0') + ':' + now.getMinutes().toString().padStart(2,'0');
+  const currentDrag = dragStartTime !== null ? Date.now() - dragStartTime : 0;
+  const totalMs     = activePourMs + currentDrag;
+  const pourSec     = totalMs > 0 ? (totalMs / 1000).toFixed(1) + 's' : '--';
+
+  // calculate total height
+  const headerH = pad + lH * 1.5 + lH * 0.6 + lH + lH * 5 + pad;
+  const circleH = circleD + pad * 2;
+  const footerH = lH + pad * 2;
+  const totalH  = headerH + circleH + footerH;
+
+  const off = document.createElement('canvas');
+  off.width  = rW;
+  off.height = totalH;
+  const c   = off.getContext('2d');
+
+  // receipt paper background
+  c.fillStyle = '#F5F0E8';
+  c.fillRect(0, 0, rW, totalH);
+
+  c.fillStyle = '#1a1a1a';
+  c.textBaseline = 'top';
+
+  let y = pad;
+
+  // ── SHARE A CUP header ──
+  c.font = 'bold ' + (fSize + 4 * scale) + 'px "Courier New", Courier, monospace';
+  c.fillText('SHARE A CUP', pad, y);
+  y += lH * 1.5;
+
+  // divider
+  function divider () {
+    c.strokeStyle = '#b0a898';
+    c.lineWidth = divY;
+    c.beginPath();
+    c.moveTo(pad, y); c.lineTo(rW - pad, y);
+    c.stroke();
+    y += lH * 0.8;
+  }
+  divider();
+
+  // ── receipt body ──
+  c.font = fSize + 'px "Courier New", Courier, monospace';
+  c.fillText('CUP RECEIPT',       pad, y); y += lH * 1.4;
+  c.fillText('Time:  ' + timeStr, pad, y); y += lH;
+  c.fillText('Pour:  ' + pourSec, pad, y); y += lH * 1.4;
+  c.fillText('Notes:',            pad, y); y += lH;
+  c.fillText(note,                pad, y); y += lH * 1.2;
+
+  divider();
+
+  // ── circle with art ──
+  y += pad * 0.6;
+  const cx = rW / 2;
+  const cy = y + circleD / 2;
+  c.save();
+  c.beginPath();
+  c.arc(cx, cy, circleD / 2, 0, Math.PI * 2);
+  c.clip();
+  c.drawImage(canvas, cx - circleD / 2, cy - circleD / 2, circleD, circleD);
+  c.restore();
+  y += circleD + pad * 0.8;
+
+  divider();
+
+  // ── thank you ──
+  y += lH * 0.4;
+  c.fillText('thank you.', pad, y);
+
+  // download
+  const link    = document.createElement('a');
+  link.download = 'spill-something.png';
+  link.href     = off.toDataURL('image/png');
+  link.click();
+}
+
+function openIRL () {
+  window.location.href = 'irl.html';
+}
+
+// ─────────────────────────────────────────
+// HELPERS
+// ─────────────────────────────────────────
+function normalizeColor (input) { return { r: input.r/255, g: input.g/255, b: input.b/255 }; }
+function getResolution (resolution) {
+  let ar = canvas.width / canvas.height;
+  if (ar < 1) ar = 1.0 / ar;
+  let min = Math.round(resolution), max = Math.round(resolution * ar);
+  return canvas.width > canvas.height ? { width: max, height: min } : { width: min, height: max };
+}
+function isMobile () { return /Mobi|Android/i.test(navigator.userAgent); }
+
+})();
+</script>
+</body>
+</html>
