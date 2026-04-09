@@ -114,8 +114,6 @@ html, body {
 
 /* ─────────────────────────────────────────
    COFFEE CUP OVERLAY
-   ↓ Put your image file in the same folder
-     as this HTML and update the filename.
 ───────────────────────────────────────── */
 #cup-overlay {
   position: absolute;
@@ -123,7 +121,7 @@ html, body {
   top: 143px;
   width: 610px;
   height: 610px;
-  background-image: url('Brewing up the vibes.png'); /* ← filename must match exactly */
+  background-image: url('Brewing up the vibes.png'); 
   background-size: cover;
   background-position: center;
   border-radius: 50%;
@@ -1236,7 +1234,7 @@ function sendACup () {
   link.click();
 }
 
-// IRL — opens your Cargo page
+// IRL — in case i want to put cargosite link
 function openIRL () {
   window.open('YOUR_CARGO_URL_HERE', '_blank'); // ← paste your Cargo URL here
 }
